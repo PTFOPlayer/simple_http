@@ -1,5 +1,5 @@
 pub mod serwer;
-pub mod threadpool;
+pub mod threading;
 
 use serwer::{Method, Serwer};
 

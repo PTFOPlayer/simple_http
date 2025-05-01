@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::threadpool::ThreadPool;
+use crate::threading::threadpool::ThreadPool;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub enum Method {
