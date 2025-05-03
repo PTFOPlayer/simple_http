@@ -1,37 +1,16 @@
 use std::{
     collections::HashMap,
-    fs,
-    hash::Hash,
     io::{self, BufRead, BufReader, Write},
     net::{TcpListener, TcpStream},
     sync::Arc,
 };
 
-use crate::threading::threadpool::ThreadPool;
+use crate::{
+    serwer::{Status, err404},
+    threading::threadpool::ThreadPool,
+};
 
-#[derive(PartialEq, Eq, Hash, Clone, Copy)]
-pub enum Method {
-    Get,
-    Post,
-}
-
-impl Method {
-    pub fn from_str(method: &str) -> Self {
-        match method {
-            "Get" | "GET" | "get" => Method::Get,
-            "Post" | "POST" | "post" => Method::Post,
-            _ => panic!("not supported method"),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct Status;
-
-impl Status {
-    pub const OK: &'static str = "HTTP/1.1 200 OK";
-    pub const NOT_FOUND: &'static str = "HTTP/1.1 404 NOT FOUND";
-}
+use super::{Method, SerwerTrait, content_type_from_file, response_from_file};
 
 pub struct Response<'a, 'b> {
     stream: &'a mut TcpStream,
@@ -65,41 +44,12 @@ struct Endpoint {
 pub struct Serwer {
     addr: &'static str,
     endpoints: HashMap<Method, Vec<Endpoint>>,
-    path_fallback: bool,
+    path_search: Option<&'static str>,
 }
 
 impl Serwer {
-    pub fn new() -> Self {
-        Serwer::with_addr("127.0.0.1:3000")
-    }
-
-    pub fn with_addr(addr: &'static str) -> Self {
-        let mut endpoints = HashMap::new();
-        endpoints.insert(Method::Get, vec![]);
-        endpoints.insert(Method::Post, vec![]);
-        Self {
-            addr,
-            endpoints,
-            path_fallback: true,
-        }
-    }
-
-    pub fn set_path_search_fallback(&mut self, fallback: bool) {
-        self.path_fallback = fallback;
-    }
-
-    pub fn listen(&mut self, threads: Option<usize>) {
-        let listener = TcpListener::bind(self.addr).unwrap();
-
-        let pool = ThreadPool::new(threads.unwrap_or(4));
-
-        let path_fallback = self.path_fallback;
-        let endpoints = Arc::new(self.endpoints.clone());
-
-        for stream in listener.incoming() {
-            let endpoints = Arc::clone(&endpoints);
-            pool.execute(move || handle_request(path_fallback, endpoints, stream.unwrap()));
-        }
+    pub fn set_path_search(&mut self, path: Option<&'static str>) {
+        self.path_search = path;
     }
 
     pub fn add_endpoint(&mut self, metod: Method, path: &'static str, handler: fn(Response) -> ()) {
@@ -110,8 +60,39 @@ impl Serwer {
     }
 }
 
+impl SerwerTrait for Serwer {
+    fn new() -> Self {
+        Serwer::with_addr("127.0.0.1:3000")
+    }
+
+    fn with_addr(addr: &'static str) -> Self {
+        let mut endpoints = HashMap::new();
+        endpoints.insert(Method::Get, vec![]);
+        endpoints.insert(Method::Post, vec![]);
+        Self {
+            addr,
+            endpoints,
+            path_search: None,
+        }
+    }
+
+    fn listen(&mut self, threads: Option<usize>) {
+        let listener = TcpListener::bind(self.addr).unwrap();
+
+        let pool = ThreadPool::new(threads.unwrap_or(4));
+
+        let endpoints = Arc::new(self.endpoints.clone());
+        let path_search = self.path_search;
+
+        for stream in listener.incoming() {
+            let endpoints = Arc::clone(&endpoints);
+            pool.execute(move || handle_request(path_search, endpoints, stream.unwrap()));
+        }
+    }
+}
+
 fn handle_request(
-    path_fallback: bool,
+    path_search: Option<&'static str>,
     endpoints: Arc<HashMap<Method, Vec<Endpoint>>>,
     mut stream: TcpStream,
 ) {
@@ -133,7 +114,7 @@ fn handle_request(
         return;
     }
 
-    let Err(err) = fallback(path_fallback, &mut stream, path) else {
+    let Err(err) = fallback(path_search, &mut stream, path) else {
         return;
     };
 
@@ -141,33 +122,18 @@ fn handle_request(
     err404(&mut stream);
 }
 
-fn fallback(path_fallback: bool, stream: &mut TcpStream, path: &str) -> Result<(), io::Error> {
-    if !path_fallback {
+fn fallback(
+    path_search: Option<&'static str>,
+    stream: &mut TcpStream,
+    path: &str,
+) -> Result<(), io::Error> {
+    let Some(path_search) = path_search else {
         return Err(io::Error::other("fallback is off"));
-    }
+    };
 
-    let response = response_from_file(Status::OK, path)?;
+    let path = path_search.to_owned() + path;
+    let response = response_from_file(Status::OK, content_type_from_file(&path, "text/plain"), &path)?;
     stream.write_all(&response)?;
 
     Ok(())
-}
-
-fn err404(stream: &mut TcpStream) {
-    let response = response_from_file(Status::NOT_FOUND, "/404.html").unwrap();
-    stream.write_all(&response).unwrap();
-}
-
-fn response_from_file(status: &str, path: &str) -> Result<Vec<u8>, io::Error> {
-    let content_path = "web".to_string() + path;
-
-    let mut contents = fs::read(content_path)?;
-    let length = contents.len();
-
-    let mut response = format!("{status}\nContent-Length: {length}\n\n")
-        .as_bytes()
-        .to_vec();
-
-    response.append(&mut contents);
-
-    Ok(response)
 }
