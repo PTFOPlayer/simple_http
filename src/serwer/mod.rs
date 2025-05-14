@@ -1,17 +1,18 @@
-use std::{fs, io::{self, Write}, net::TcpStream};
+use std::{io::Write, net::TcpStream};
 
-
+pub mod response;
 pub mod serwer;
 pub mod spa_serwer;
 
 pub trait SerwerTrait {
-    fn new() -> Self;
+    fn with_port(&mut self, port: u16) {
+        self.with_addr(format!("127.0.0.1:{}", port))
+    }
 
-    fn with_addr(addr: &'static str) -> Self;
+    fn with_addr(&mut self, addr: String);
 
     fn listen(&mut self, threads: Option<usize>);
 }
-
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub enum Method {
@@ -36,22 +37,6 @@ impl Status {
     pub const OK: &'static str = "HTTP/1.1 200 OK";
     pub const NOT_FOUND: &'static str = "HTTP/1.1 404 NOT FOUND";
 }
-
-
-fn response_from_file(status: &str, content_type: &str, path: &str) -> Result<Vec<u8>, io::Error> {
-    let mut contents = fs::read(path)?;
-
-    let length = contents.len();
-
-    let mut response = format!("{status}\nContent-Length: {length}\nContent-Type: {content_type}\n\n")
-        .as_bytes()
-        .to_vec();
-
-    response.append(&mut contents);
-
-    Ok(response)
-}
-
 
 fn err404(stream: &mut TcpStream) {
     let site404 = r#"
@@ -82,6 +67,6 @@ fn content_type_from_file<'a>(path: &str, default: &'a str) -> &'a str {
         _ if path.ends_with(".html") => "text/html",
         _ if path.ends_with(".xml") => "text/xml",
         _ if path.ends_with(".js") => "application/javascript",
-        _ => default
+        _ => default,
     }
 }

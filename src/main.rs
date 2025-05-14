@@ -1,42 +1,47 @@
+pub mod config;
 pub mod serwer;
 pub mod threading;
 
-use serwer::{serwer::Serwer, spa_serwer::SpaSerwer, Method, SerwerTrait};
+use std::process::exit;
+
+use config::parse_config;
+use log::{error, info, warn};
+use serwer::{SerwerTrait, serwer::Serwer};
 
 fn main() {
-    let mut args = std::env::args();
-    args.next();
-    let Some(arg) = args.next() else {
-        serwer();
-        return;
-    };
+    simple_logger::SimpleLogger::new().init().unwrap();
+    info!("Serwer starting...");
 
-    match arg.as_str() {
-        "--spa" | "-s" => spa(),
-        _ => serwer(),
+    let mut args = std::env::args().skip(1);
+
+    let mut config = String::from("./simple_http_conifg.toml");
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--config" | "-c" => config = args.next().unwrap(),
+            _ => panic!("unknown arg"),
+        }
     }
 
+    let config = match parse_config(config) {
+        Ok(res) => res,
+        Err(err) => {
+            error!("{}", err);
+            exit(-1);
+        }
+    };
 
-}
-
-fn serwer() {
     let mut serwer = Serwer::new();
+    serwer.with_port(config.serwer.listen);
+    serwer.set_path_search(Some(config.serwer.root));
 
-    serwer.set_path_search(Some("web"));
+    let mut serwer: Box<dyn SerwerTrait> = if let Some(spa) = config.serwer.spa {
+        warn!("Moving to spa mode");
+        let mut serwer = serwer.into_spa();
+        serwer.set_entry_point(spa);
+        Box::new(serwer)
+    } else {
+        Box::new(serwer)
+    };
 
-    serwer.add_endpoint(Method::Get, "/", |mut res| {
-        let contents = "lorem";
-        res.send(contents.as_bytes());
-    });
-
-    serwer.listen(Some(4));
+    serwer.listen(config.serwer.threads);
 }
-
-fn spa() {
-    let mut spa_serwer = SpaSerwer::new();
-
-    spa_serwer.set_entry_point("./spa/dist");
-    spa_serwer.listen(None);
-}
-
-

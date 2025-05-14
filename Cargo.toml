@@ -4,10 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-
-[profile.release]
-strip = true 
-opt-level = "z"
-lto = true
-codegen-units = 1
-panic = "abort"
+log = "0.4.27"
+serde = { version = "1.0.219", features = ["derive"] }
+simple_logger = "5.0.0"
+toml = "0.8.22"

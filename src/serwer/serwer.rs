@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
-    io::{self, BufRead, BufReader, Write},
+    fs,
+    io::{self, BufRead, BufReader},
     net::{TcpListener, TcpStream},
     sync::Arc,
 };
@@ -10,30 +11,9 @@ use crate::{
     threading::threadpool::ThreadPool,
 };
 
-use super::{Method, SerwerTrait, content_type_from_file, response_from_file};
-
-pub struct Response<'a, 'b> {
-    stream: &'a mut TcpStream,
-    status: &'b str,
-}
-
-impl<'a, 'b> Response<'a, 'b> {
-    pub fn send(&mut self, contents: &[u8]) {
-        let length = contents.len();
-
-        let response = format!("{}\nContent-Length: {}\n\n", self.status, length)
-            .as_bytes()
-            .to_vec();
-
-        self.stream.write(&response).unwrap();
-        self.stream.write(&contents).unwrap();
-        self.stream.flush().unwrap();
-    }
-
-    pub fn set_status_line(&mut self, status: &'b str) {
-        self.status = status;
-    }
-}
+use super::{
+    Method, SerwerTrait, content_type_from_file, response::Response, spa_serwer::SpaSerwer,
+};
 
 #[derive(Clone)]
 struct Endpoint {
@@ -42,13 +22,23 @@ struct Endpoint {
 }
 
 pub struct Serwer {
-    addr: &'static str,
+    addr: String,
     endpoints: HashMap<Method, Vec<Endpoint>>,
-    path_search: Option<&'static str>,
+    path_search: Option<String>,
 }
 
 impl Serwer {
-    pub fn set_path_search(&mut self, path: Option<&'static str>) {
+    pub fn new() -> Self {
+        let mut endpoints = HashMap::new();
+        endpoints.insert(Method::Get, vec![]);
+        endpoints.insert(Method::Post, vec![]);
+        Self {
+            addr: "127.0.0.1:80".to_owned(),
+            endpoints,
+            path_search: None,
+        }
+    }
+    pub fn set_path_search(&mut self, path: Option<String>) {
         self.path_search = path;
     }
 
@@ -58,33 +48,29 @@ impl Serwer {
             .unwrap()
             .push(Endpoint { path, handler });
     }
+
+    pub fn into_spa(self) -> SpaSerwer {
+        let mut spa = SpaSerwer::new();
+        spa.with_addr(self.addr);
+
+        spa
+    }
 }
 
 impl SerwerTrait for Serwer {
-    fn new() -> Self {
-        Serwer::with_addr("127.0.0.1:3000")
-    }
-
-    fn with_addr(addr: &'static str) -> Self {
-        let mut endpoints = HashMap::new();
-        endpoints.insert(Method::Get, vec![]);
-        endpoints.insert(Method::Post, vec![]);
-        Self {
-            addr,
-            endpoints,
-            path_search: None,
-        }
+    fn with_addr(&mut self, addr: String) {
+        self.addr = addr
     }
 
     fn listen(&mut self, threads: Option<usize>) {
-        let listener = TcpListener::bind(self.addr).unwrap();
+        let listener = TcpListener::bind(&self.addr).unwrap();
 
         let pool = ThreadPool::new(threads.unwrap_or(4));
 
         let endpoints = Arc::new(self.endpoints.clone());
-        let path_search = self.path_search;
 
         for stream in listener.incoming() {
+            let path_search = self.path_search.clone();
             let endpoints = Arc::clone(&endpoints);
             pool.execute(move || handle_request(path_search, endpoints, stream.unwrap()));
         }
@@ -92,7 +78,7 @@ impl SerwerTrait for Serwer {
 }
 
 fn handle_request(
-    path_search: Option<&'static str>,
+    path_search: Option<String>,
     endpoints: Arc<HashMap<Method, Vec<Endpoint>>>,
     mut stream: TcpStream,
 ) {
@@ -110,6 +96,7 @@ fn handle_request(
         (endpoint.handler)(Response {
             stream: &mut stream,
             status: Status::OK,
+            content_type: "text/plain",
         });
         return;
     }
@@ -123,7 +110,7 @@ fn handle_request(
 }
 
 fn fallback(
-    path_search: Option<&'static str>,
+    path_search: Option<String>,
     stream: &mut TcpStream,
     path: &str,
 ) -> Result<(), io::Error> {
@@ -132,8 +119,16 @@ fn fallback(
     };
 
     let path = path_search.to_owned() + path;
-    let response = response_from_file(Status::OK, content_type_from_file(&path, "text/plain"), &path)?;
-    stream.write_all(&response)?;
+
+    let mut res = Response {
+        stream,
+        content_type: content_type_from_file(&path, "text/plain"),
+        status: Status::OK,
+    };
+
+    let contents = fs::read(path)?;
+
+    res.send(&contents);
 
     Ok(())
 }
