@@ -1,8 +1,14 @@
-use std::{io::Write, net::TcpStream};
+use std::{
+    io::{BufRead, BufReader, Write},
+    net::TcpStream,
+};
+
+use log::info;
 
 pub mod response;
 pub mod serwer;
 pub mod spa_serwer;
+pub mod content_type;
 
 pub trait SerwerTrait {
     fn with_port(&mut self, port: u16) {
@@ -38,7 +44,7 @@ impl Status {
     pub const NOT_FOUND: &'static str = "HTTP/1.1 404 NOT FOUND";
 }
 
-fn err404(stream: &mut TcpStream) {
+pub fn err404(stream: &mut TcpStream) {
     let site404 = r#"
 <!DOCTYPE html>
 <html lang="en">
@@ -48,7 +54,8 @@ fn err404(stream: &mut TcpStream) {
     <title>Document</title>
 </head>
 <body>
-    404
+    <h1>Simple HTTP</h1>
+    <p>404</p>
 </body>
 </html>"#;
     let response = format!(
@@ -61,12 +68,21 @@ fn err404(stream: &mut TcpStream) {
     stream.write_all(response.as_bytes()).unwrap();
 }
 
-fn content_type_from_file<'a>(path: &str, default: &'a str) -> &'a str {
-    match path {
-        _ if path.ends_with(".css") => "text/css",
-        _ if path.ends_with(".html") => "text/html",
-        _ if path.ends_with(".xml") => "text/xml",
-        _ if path.ends_with(".js") => "application/javascript",
-        _ => default,
-    }
+pub struct Request {
+    pub method: String,
+    pub url: String,
+}
+
+pub fn parse_request(stream: &mut TcpStream) -> Request {
+    let buf_reader = BufReader::new(stream);
+    let mut req_lines = buf_reader.lines();
+    let binding = req_lines.next().unwrap().unwrap();
+
+    let mut request_line = binding.split(' ');
+    let method = request_line.next().unwrap().to_owned();
+    let url = request_line.next().unwrap().to_owned();
+
+    info!("{} => {}", method, url);
+
+    Request { method, url }
 }

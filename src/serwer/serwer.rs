@@ -1,18 +1,20 @@
 use std::{
     collections::HashMap,
     fs,
-    io::{self, BufRead, BufReader},
+    io::{self},
     net::{TcpListener, TcpStream},
     sync::Arc,
 };
 
+use log::warn;
+
 use crate::{
-    serwer::{Status, err404},
+    serwer::{content_type::ContentType, err404, parse_request, Status},
     threading::threadpool::ThreadPool,
 };
 
 use super::{
-    Method, SerwerTrait, content_type_from_file, response::Response, spa_serwer::SpaSerwer,
+    Method, SerwerTrait, response::Response, spa_serwer::SpaSerwer,
 };
 
 #[derive(Clone)]
@@ -68,53 +70,51 @@ impl SerwerTrait for Serwer {
         let pool = ThreadPool::new(threads.unwrap_or(4));
 
         let endpoints = Arc::new(self.endpoints.clone());
+        let path_search = Arc::new(self.path_search.clone());
 
         for stream in listener.incoming() {
-            let path_search = self.path_search.clone();
             let endpoints = Arc::clone(&endpoints);
+            let path_search = Arc::clone(&path_search);
             pool.execute(move || handle_request(path_search, endpoints, stream.unwrap()));
         }
     }
 }
 
 fn handle_request(
-    path_search: Option<String>,
+    path_search: Arc<Option<String>>,
     endpoints: Arc<HashMap<Method, Vec<Endpoint>>>,
     mut stream: TcpStream,
 ) {
-    let buf_reader = BufReader::new(&stream);
-    let mut req_lines = buf_reader.lines();
-    let binding = req_lines.next().unwrap().unwrap();
+    let request = parse_request(&mut stream);
 
-    let mut request_line = binding.split(' ');
-    let method = request_line.next().unwrap();
-    let path = request_line.next().unwrap();
+    let list = &endpoints[&Method::from_str(&request.method)];
 
-    let list = &endpoints[&Method::from_str(method)];
-
-    if let Some(endpoint) = list.iter().find(|endpoint| endpoint.path == path) {
+    if let Some(endpoint) = list.iter().find(|endpoint| endpoint.path == request.url) {
         (endpoint.handler)(Response {
             stream: &mut stream,
             status: Status::OK,
-            content_type: "text/plain",
+            content_type: ContentType::TextPlain,
         });
         return;
     }
 
-    let Err(err) = fallback(path_search, &mut stream, path) else {
+    let Err(err) = fallback(path_search, &mut stream, &request.url) else {
         return;
     };
 
-    println!("Method: {}, Request: {}, Error: {}", method, path, err);
+    warn!(
+        "Method: {}, Request: {}, Error: {}",
+        request.method, request.url, err
+    );
     err404(&mut stream);
 }
 
 fn fallback(
-    path_search: Option<String>,
+    path_search: Arc<Option<String>>,
     stream: &mut TcpStream,
     path: &str,
 ) -> Result<(), io::Error> {
-    let Some(path_search) = path_search else {
+    let Some(path_search) = path_search.as_ref() else {
         return Err(io::Error::other("fallback is off"));
     };
 
@@ -122,7 +122,7 @@ fn fallback(
 
     let mut res = Response {
         stream,
-        content_type: content_type_from_file(&path, "text/plain"),
+        content_type: ContentType::from_file_ext(&path),
         status: Status::OK,
     };
 

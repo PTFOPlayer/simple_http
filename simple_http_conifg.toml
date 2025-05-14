@@ -2,4 +2,4 @@
 listen = 3000
 root = "./web"
 threads = 4
-spa = "./spa/dist"
+# spa = "./spa/dist"

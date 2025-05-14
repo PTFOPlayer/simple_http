@@ -1,14 +1,17 @@
 use std::{
     fs,
-    io::{BufRead, BufReader},
     net::{TcpListener, TcpStream},
+    sync::Arc,
 };
 
 use log::warn;
 
-use crate::threading::threadpool::ThreadPool;
+use crate::{
+    serwer::{content_type::ContentType, parse_request},
+    threading::threadpool::ThreadPool,
+};
 
-use super::{SerwerTrait, Status, content_type_from_file, err404, response::Response};
+use super::{SerwerTrait, Status, err404, response::Response};
 
 pub struct SpaSerwer {
     addr: String,
@@ -38,41 +41,36 @@ impl SerwerTrait for SpaSerwer {
 
         let pool = ThreadPool::new(threads.unwrap_or(4));
 
+        let entry = Arc::new(self.entry.clone());
         for stream in listener.incoming() {
-            let entry = self.entry.clone();
+            let entry = Arc::clone(&entry);
             let stream = stream.unwrap();
             pool.execute(move || handle_request(stream, entry));
         }
     }
 }
 
-fn handle_request(mut stream: TcpStream, entry: String) {
-    let buf_reader = BufReader::new(&stream);
-    let mut req_lines = buf_reader.lines();
-    let binding = req_lines.next().unwrap().unwrap();
+fn handle_request(mut stream: TcpStream, entry: Arc<String>) {
+    let request = parse_request(&mut stream);
 
-    let mut request_line = binding.split(' ');
-    let _ = request_line.next().unwrap();
-    let path = request_line.next().unwrap();
-
-    let content_type = content_type_from_file(path, "text/html");
-    let entry = if content_type == "text/html" {
-        entry.to_string() + "/index.html"
+    let content_type = ContentType::from_file_ext_or(&request.url, ContentType::TextHtml);
+    let (entry, content_type) = if content_type == ContentType::TextHtml {
+        (entry.to_string() + "/index.html", content_type)
     } else {
-        entry.to_string() + path
+        let entry = entry.to_string() + &request.url;
+        (entry, content_type)
     };
 
     if let Ok(contents) = fs::read(&entry) {
         let mut res = Response {
             stream: &mut stream,
-            content_type: content_type_from_file(&entry, "text/plain"),
+            content_type,
             status: Status::OK,
         };
 
         res.send(&contents);
         return;
     }
-
 
     warn!("Not found: \n {}", entry);
     err404(&mut stream);
