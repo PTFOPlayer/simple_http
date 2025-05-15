@@ -9,16 +9,18 @@ pub struct Response<'a, 'b> {
 }
 
 impl<'a, 'b> Response<'a, 'b> {
-    pub fn send(&mut self, contents: &[u8]) {
-        let length = contents.len();
+    pub fn send(&mut self, body: &[u8]) {
+        let length = body.len();
 
         let response = format!(
             "{}\nContent-Length: {}\nContent-Type:{}\n\n",
-            self.status, length, self.content_type.to_string()
+            self.status,
+            length,
+            self.content_type.to_string()
         );
 
         self.stream.write(response.as_bytes()).unwrap();
-        self.stream.write(&contents).unwrap();
+        self.stream.write(&body).unwrap();
         self.stream.flush().unwrap();
     }
 

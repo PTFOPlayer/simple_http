@@ -1,21 +1,19 @@
 use std::{
-    collections::HashMap,
     fs,
     io::{self},
     net::{TcpListener, TcpStream},
     sync::Arc,
 };
 
+use dashmap::DashMap;
 use log::warn;
 
 use crate::{
-    serwer::{content_type::ContentType, err404, parse_request, Status},
+    serwer::{Status, content_type::ContentType, err404, parse_request},
     threading::threadpool::ThreadPool,
 };
 
-use super::{
-    Method, SerwerTrait, response::Response, spa_serwer::SpaSerwer,
-};
+use super::{Method, SerwerTrait, response::Response, spa_serwer::SpaSerwer};
 
 #[derive(Clone)]
 struct Endpoint {
@@ -25,13 +23,13 @@ struct Endpoint {
 
 pub struct Serwer {
     addr: String,
-    endpoints: HashMap<Method, Vec<Endpoint>>,
+    endpoints: DashMap<Method, Vec<Endpoint>>,
     path_search: Option<String>,
 }
 
 impl Serwer {
     pub fn new() -> Self {
-        let mut endpoints = HashMap::new();
+        let endpoints = DashMap::new();
         endpoints.insert(Method::Get, vec![]);
         endpoints.insert(Method::Post, vec![]);
         Self {
@@ -82,12 +80,12 @@ impl SerwerTrait for Serwer {
 
 fn handle_request(
     path_search: Arc<Option<String>>,
-    endpoints: Arc<HashMap<Method, Vec<Endpoint>>>,
+    endpoints: Arc<DashMap<Method, Vec<Endpoint>>>,
     mut stream: TcpStream,
 ) {
     let request = parse_request(&mut stream);
 
-    let list = &endpoints[&Method::from_str(&request.method)];
+    let list = &endpoints.get(&Method::from_str(&request.method)).unwrap();
 
     if let Some(endpoint) = list.iter().find(|endpoint| endpoint.path == request.url) {
         (endpoint.handler)(Response {

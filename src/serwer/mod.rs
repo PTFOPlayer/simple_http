@@ -5,10 +5,13 @@ use std::{
 
 use log::info;
 
+pub mod content_type;
 pub mod response;
 pub mod serwer;
 pub mod spa_serwer;
-pub mod content_type;
+pub mod status;
+
+pub use status::Status;
 
 pub trait SerwerTrait {
     fn with_port(&mut self, port: u16) {
@@ -34,14 +37,6 @@ impl Method {
             _ => panic!("not supported method"),
         }
     }
-}
-
-#[derive(Clone)]
-pub struct Status;
-
-impl Status {
-    pub const OK: &'static str = "HTTP/1.1 200 OK";
-    pub const NOT_FOUND: &'static str = "HTTP/1.1 404 NOT FOUND";
 }
 
 pub fn err404(stream: &mut TcpStream) {
