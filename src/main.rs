@@ -1,6 +1,7 @@
 pub mod config;
 pub mod serwer;
 pub mod threading;
+pub mod utils;
 
 use std::process::exit;
 

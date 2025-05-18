@@ -6,12 +6,10 @@ use std::{
 
 use log::warn;
 
-use crate::{
-    serwer::{content_type::ContentType, parse_request},
-    threading::threadpool::ThreadPool,
-};
 
-use super::{SerwerTrait, Status, err404, response::Response};
+use crate::{threading::threadpool::ThreadPool, utils::{content_type::ContentType, err404, request::parse_request, response::Response, status::Status}};
+
+use super::SerwerTrait;
 
 pub struct SpaSerwer {
     addr: String,
@@ -73,5 +71,5 @@ fn handle_request(mut stream: TcpStream, entry: Arc<String>) {
     }
 
     warn!("Not found: \n {}", entry);
-    err404(&mut stream);
+    err404::err404(&mut stream);
 }

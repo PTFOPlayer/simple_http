@@ -9,11 +9,14 @@ use dashmap::DashMap;
 use log::warn;
 
 use crate::{
-    serwer::{Status, content_type::ContentType, err404, parse_request},
     threading::threadpool::ThreadPool,
+    utils::{
+        content_type::ContentType, err404, request::parse_request, response::Response,
+        status::Status,
+    },
 };
 
-use super::{Method, SerwerTrait, response::Response, spa_serwer::SpaSerwer};
+use super::{Method, SerwerTrait, spa_serwer::SpaSerwer};
 
 #[derive(Clone)]
 struct Endpoint {
@@ -96,7 +99,7 @@ fn handle_request(
         return;
     }
 
-    let Err(err) = fallback(path_search, &mut stream, &request.url) else {
+    let Err(err) = search_path(path_search, &mut stream, &request.url) else {
         return;
     };
 
@@ -104,16 +107,16 @@ fn handle_request(
         "Method: {}, Request: {}, Error: {}",
         request.method, request.url, err
     );
-    err404(&mut stream);
+    err404::err404(&mut stream);
 }
 
-fn fallback(
+fn search_path(
     path_search: Arc<Option<String>>,
     stream: &mut TcpStream,
     path: &str,
 ) -> Result<(), io::Error> {
     let Some(path_search) = path_search.as_ref() else {
-        return Err(io::Error::other("fallback is off"));
+        return Err(io::Error::other("search_path is off"));
     };
 
     let path = path_search.to_owned() + path;
