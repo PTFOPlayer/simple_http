@@ -1,7 +1,9 @@
-use std::{io::{BufRead, BufReader}, net::TcpStream};
+use std::{
+    io::{BufRead, BufReader},
+    net::TcpStream,
+};
 
 use log::info;
-
 
 pub struct Request {
     pub method: String,
@@ -19,5 +21,9 @@ pub fn parse_request(stream: &mut TcpStream) -> Request {
 
     info!("{} => {}", method, url);
 
-    Request { method, url }
+
+    Request {
+        method,
+        url
+    }
 }

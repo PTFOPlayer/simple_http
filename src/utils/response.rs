@@ -1,6 +1,6 @@
 use std::{io::Write, net::TcpStream};
 
-use super::content_type::ContentType;
+use super::{content_type::ContentType, status::Status};
 
 pub struct Response<'a, 'b> {
     pub stream: &'a mut TcpStream,
@@ -9,6 +9,18 @@ pub struct Response<'a, 'b> {
 }
 
 impl<'a, 'b> Response<'a, 'b> {
+    pub fn new(stream: &'a mut TcpStream, content_type: ContentType, status: &'b str) -> Self {
+        Self {
+            stream,
+            content_type,
+            status,
+        }
+    }
+
+    pub fn new_ok(stream: &'a mut TcpStream, content_type: ContentType) -> Self {
+        Self::new(stream, content_type, Status::OK)
+    }
+
     pub fn send(&mut self, body: &[u8]) {
         let length = body.len();
 
